@@ -1,0 +1,18 @@
+[
+  {
+    "id": "c099f0da-c2bb-4a20-81fb-df1f9a44869d",
+    "username": "admin",
+    "email": "admin@test.com",
+    "password": "$2b$10$Qxzvfe54BkYTV3ptGqepWeOut4cXTAvLPny8fXqxpxURFX.N7bfAa",
+    "isAdmin": true,
+    "createdAt": "2026-04-03T03:17:05.306Z"
+  },
+  {
+    "id": "ad1248f5-2f90-4cfb-b98a-75c26ce60b87",
+    "username": "testuser",
+    "email": "test@example.com",
+    "password": "$2b$10$UL7sXEyH/DFSOq7ZNNGuFeGrgUdHJWL9ZyLSW36JBR6qY4qADnUFS",
+    "isAdmin": false,
+    "createdAt": "2026-04-03T03:19:58.447Z"
+  }
+]

@@ -1,24 +1,26 @@
 const express = require('express');
 const router = express.Router();
 const jwt = require('jsonwebtoken');
-const User = require('../models/User');
+const bcrypt = require('bcryptjs');
+const { loadUsers, saveUsers } = require('../utils/db');
+const { v4: uuidv4 } = require('uuid');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your_secret_key_here';
 
-// Middleware to verify admin
-const verifyAdmin = async (req, res, next) => {
+// Verify admin middleware
+const verifyAdmin = (req, res, next) => {
+  const token = req.headers.authorization?.split(' ')[1];
+
+  if (!token) {
+    return res.status(401).json({ message: 'No token provided' });
+  }
+
   try {
-    const token = req.headers.authorization?.split(' ')[1];
-    if (!token) return res.status(401).json({ message: 'No token' });
-
     const decoded = jwt.verify(token, JWT_SECRET);
-    const user = await User.findById(decoded.id);
-
-    if (!user || !user.isAdmin) {
-      return res.status(403).json({ message: 'Not authorized' });
+    if (!decoded.isAdmin) {
+      return res.status(403).json({ message: 'Admin access required' });
     }
-
-    req.user = user;
+    req.user = decoded;
     next();
   } catch (error) {
     res.status(401).json({ message: 'Invalid token' });
@@ -26,50 +28,73 @@ const verifyAdmin = async (req, res, next) => {
 };
 
 // Get all users
-router.get('/users', verifyAdmin, async (req, res) => {
+router.get('/users', verifyAdmin, (req, res) => {
   try {
-    const users = await User.find().select('-password');
-    res.json(users);
+    const users = loadUsers();
+    const sanitized = users.map(u => ({
+      id: u.id,
+      username: u.username,
+      email: u.email,
+      isAdmin: u.isAdmin,
+      createdAt: u.createdAt,
+    }));
+    res.json(sanitized);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
 });
 
-// Create user (admin)
+// Create user
 router.post('/users', verifyAdmin, async (req, res) => {
   try {
     const { username, email, password, isAdmin } = req.body;
 
-    const existingUser = await User.findOne({ $or: [{ email }, { username }] });
+    if (!username || !email || !password) {
+      return res.status(400).json({ message: 'All fields required' });
+    }
+
+    const users = loadUsers();
+    const existingUser = users.find(u => u.email === email || u.username === username);
     if (existingUser) {
       return res.status(400).json({ message: 'User already exists' });
     }
 
-    const bcrypt = require('bcryptjs');
     const hashedPassword = await bcrypt.hash(password, 10);
-
-    const user = new User({
+    const user = {
+      id: uuidv4(),
       username,
       email,
       password: hashedPassword,
       isAdmin: isAdmin || false,
-    });
+      createdAt: new Date().toISOString(),
+    };
 
-    await user.save();
-    res.json({ message: 'User created', user: { id: user._id, username, email, isAdmin: user.isAdmin } });
+    users.push(user);
+    saveUsers(users);
+
+    res.json({
+      message: 'User created successfully',
+      user: { id: user.id, username: user.username, email: user.email, isAdmin: user.isAdmin },
+    });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
 });
 
 // Delete user
-router.delete('/users/:id', verifyAdmin, async (req, res) => {
+router.delete('/users/:id', verifyAdmin, (req, res) => {
   try {
-    const user = await User.findByIdAndDelete(req.params.id);
-    if (!user) {
+    const { id } = req.params;
+    let users = loadUsers();
+
+    if (!users.find(u => u.id === id)) {
       return res.status(404).json({ message: 'User not found' });
     }
-    res.json({ message: 'User deleted' });
+
+    users = users.filter(u => u.id !== id);
+    saveUsers(users);
+
+    res.json({ message: 'User deleted successfully' });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -78,18 +103,23 @@ router.delete('/users/:id', verifyAdmin, async (req, res) => {
 // Update user
 router.put('/users/:id', verifyAdmin, async (req, res) => {
   try {
+    const { id } = req.params;
     const { isAdmin } = req.body;
-    const user = await User.findByIdAndUpdate(
-      req.params.id,
-      { isAdmin },
-      { new: true }
-    ).select('-password');
+    let users = loadUsers();
 
-    if (!user) {
+    const userIndex = users.findIndex(u => u.id === id);
+    if (userIndex === -1) {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    res.json({ message: 'User updated', user });
+    users[userIndex].isAdmin = isAdmin || users[userIndex].isAdmin;
+    saveUsers(users);
+
+    const updated = users[userIndex];
+    res.json({
+      message: 'User updated successfully',
+      user: { id: updated.id, username: updated.username, email: updated.email, isAdmin: updated.isAdmin },
+    });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
